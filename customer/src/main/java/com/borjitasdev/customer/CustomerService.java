@@ -1,8 +1,8 @@
 package com.borjitasdev.customer;
 
+import com.borjitasdev.amqp.RabbitMQMessageProducer;
 import com.borjitasdev.clients.fraud.FraudCheckResponse;
 import com.borjitasdev.clients.fraud.FraudClient;
-import com.borjitasdev.clients.notification.NotificationClient;
 import com.borjitasdev.clients.notification.NotificationRequest;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -13,7 +13,7 @@ public class CustomerService {
 
     private final CustomerRepository customerRepository;
     private final FraudClient fraudClient;
-    private final NotificationClient notificationClient;
+    private final RabbitMQMessageProducer rabbitMQMessageProducer;
 
     public void registerCustomer(CustomerRegistrationRequest request) {
         Customer customer = Customer.builder()
@@ -21,8 +21,10 @@ public class CustomerService {
                 .lastName(request.lastName())
                 .email(request.email())
                 .build();
+
         // todo: check if email valid
         // todo: check if email not taken
+
         customerRepository.saveAndFlush(customer);
         FraudCheckResponse fraudCheckResponse = fraudClient.isFraudster(customer.getId());
 
@@ -30,10 +32,16 @@ public class CustomerService {
             throw new IllegalStateException("fraudster");
         }
 
-        notificationClient.sendNotification(
-                new NotificationRequest(
-                        customer.getId(),
-                        customer.getEmail(),
-                        "Hello this is the notification dear %s".formatted(customer.getFirstName())));
+        NotificationRequest notificationRequest = new NotificationRequest(
+                customer.getId(),
+                customer.getEmail(),
+                "Hello this is the notification dear %s".formatted(customer.getFirstName()));
+
+
+        this.rabbitMQMessageProducer.publish(
+                notificationRequest,
+                "internal.exchange",
+                "internal.notification.routing-key"
+        );
     }
 }
